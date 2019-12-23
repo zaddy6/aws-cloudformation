@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: "AWS::Serverless-2016-10-31"
+Description: "Cloudformation template which takes State/Province as a parameter and exports the unix time"
+Parameters:
+  State:
+    Type: "String"
+    Description: "State or province"
+    Default: "London"
+Resources:
+  role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+      Path: /service-role/
+
+  gettime:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt role.Arn
+      
+      InlineCode: |
+        from botocore.vendored import requests
+        import cfnresponse
+
+        def handler(event, context):
+
+          if event["RequestType"] == "Create" or event["RequestType"] == "Update":
+            try:
+              url = "http://worldtimeapi.org/api/timezone/Europe/{}.json".format(event["ResourceProperties"]["State"])
+              response = requests.get(url)
+              
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, response.json())
+            except Exception as e:
+              cfnresponse.send(event, context, cfnresponse.FAILED, {})
+
+            return
+
+      
+      MemorySize: 128
+      Runtime: python3.6
+      Timeout: 8
+      
+  timezone:
+    Type: "Custom::TimeZone"
+    Properties:
+      ServiceToken: !GetAtt gettime.Arn
+      State: !Ref State
+Outputs:
+  unixtime:
+    Value: !GetAtt timezone.unixtime
